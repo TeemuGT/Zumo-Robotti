@@ -1,0 +1,316 @@
+//Labyrintti//
+//Ryhma 8//
+//Teemu Tähkä, Johanna Miettinen, Aaro Kärnä//
+#if 1
+//funktio suoraan ajolle//
+//Korjaa myös robottia jotta se olisi suorassa ja keskellä mustaa viivaa//
+void suoraa(){
+    motor_start();
+    struct sensors_ ref;
+    reflectance_start();
+    reflectance_set_threshold(9000, 9000, 11000, 11000, 9000, 9000);
+        reflectance_read(&ref);
+        if (ref.l1 > 20000 && ref.r1 > 20000){
+            motor_forward(200,1);
+        }
+        if (ref.l1 > 20000 && ref.r1 < 20000){
+            motor_turn(100,200,1);
+        }
+        if (ref.l1 < 20000 && ref.r1 > 20000){
+            motor_turn(200,100,1);
+        }
+        if (ref.l2 > 20000 && ref.r2 < 20000){
+            motor_turn(50,200,1);
+        }
+        if (ref.l2 < 20000 && ref.r2 > 20000){
+            motor_turn(200,50,1);
+        
+    }
+}
+#endif
+#if 1
+//funktio käännös oikeaan//
+void kaannosO(){
+    MotorDirLeft_Write(0);
+    MotorDirRight_Write(1);
+    PWM_WriteCompare1(75);
+    PWM_WriteCompare2(75);
+}
+#endif
+#if 1
+//funktio käännös vasempaan//
+void kaannosV(){
+    MotorDirLeft_Write(1);
+    MotorDirRight_Write(0);
+    PWM_WriteCompare1(75);
+    PWM_WriteCompare2(75);
+}
+#endif
+#if 1
+//funktio pysähdys//
+void pysahdys(){
+    motor_forward(30,100);
+    motor_stop();
+}
+#endif
+//Main funktio labyrintille//
+#if 1
+void zmain(void){
+    //Muuttijia//
+    TickType_t start;
+    TickType_t stop;
+    int x = 0;
+    int y = 0;
+    int time;
+    int i = 0;
+    //Toimintojen käynnistäminen//
+    IR_Start();
+    struct sensors_ ref;
+    Ultra_Start();
+    //Sensorien asetukset//
+    reflectance_start();
+    reflectance_set_threshold(9000, 9000, 11000, 11000, 9000, 9000);
+    //Lähtöviivalle ajo//
+    for(;;){
+        vTaskDelay(20000);
+        IR_wait();
+        for(;;){
+            reflectance_read(&ref);
+            suoraa();
+            if (ref.l3 > 20000 && ref.r3 > 20000){
+                pysahdys();
+                start = xTaskGetTickCount();
+                break;
+            }
+        }
+        //Tulostaa tiedot että on viivalla ja kauan aikaa meni siirtyä siihen//
+        print_mqtt("Zumo039/Ready", "Maze");
+        print_mqtt("Zumo039/Start", "%5d", start);
+        break;
+    }
+    for(;;){
+        IR_wait();
+        for(;;){
+            
+            //Lukee sensoreita//
+            reflectance_read(&ref);
+            i = Ultra_GetDistance();
+            //Ajaa suoraan//
+            suoraa();       //Hakee suoraan ajon funktion//
+            //Pysähtyy jokaiselle viivalle eteenpäin ajaessa ja nostaa Y arvoa aina yhdellä//
+            if ((ref.l3 > 20000 && ref.l2 > 20000 && ref.l1 > 20000) || (ref.r3 > 20000 && ref.r2 > 20000 && ref.r1 > 20000)){
+                pysahdys();     //Hakee pysähdys funktion//
+                y++;            //Antaa Y muuttujalle yhden arvon lisää//
+                vTaskDelay(2000);
+                print_mqtt("Zumo039/position", "%d %d", x, y);      //Tulostaa koordinaatit eli X:n J Y:n arvot//
+                
+            }
+            //Robotti tietää Y ja X arvoista jos se on tarpeeksi ylhäällä ja keskellä rataa, että se voi ajaa suoraan maaliin// 
+            if (y > 12 && x == 0){
+                suoraa();
+            }
+            
+            //Jos tie päättyy kääntyy oikealle//
+            if (y > 10 && (ref.l3 > 20000 || ref.r3 >20000)) {
+               
+                if(x < 0){
+                    pysahdys();     //Hakee pysähtymis funktion//
+                    vTaskDelay(500);
+                    y++;
+                    motor_start();
+                    motor_turn(100,0,300);      //Kääntyy vähän ettei keskisendorit ole mustalla//
+                    for(;;){
+                        reflectance_read(&ref);
+                        kaannosO();             //Hakee kääntymis funktion oikelle//
+                        if (ref.l1 > 20000 && ref.r1 > 20000){      //Kääntyy niin kauan että molemmat keskisensorit ovat mustalla//    
+                            pysahdys();
+                            x++;                //Antaa muuttujalle X yhden arvon lisää//
+                            vTaskDelay(1000);
+                            print_mqtt("Zumo039/position", "%d %d", x, y);      //Tulostaa koordinaatit//
+                            break;
+                        }
+                    }
+                    //Käännöksen jälkeen kääntyy takaisin kohti maalia seuraavasta risteyksestä// 
+                    for(;;){
+                        reflectance_read(&ref);
+                        suoraa();              //Hakee suoraan ajofunktion//    
+                        if (ref.l3 > 20000 && ref.r3 > 20000){      //Ajaa niin kauan kunnes tulee risteys//
+                            pysahdys();        //Hakee pysähtymis funktion//
+                            vTaskDelay(500);
+                            motor_start();  
+                            motor_turn(0,100,200);      //Kääntyy vähän jotta keskisensorit ei ole mustalla//
+                            for(;;){
+                                reflectance_read(&ref); 
+                                kaannosV();             //Hakee käännösfunktion vasempaan//
+                                if (ref.l1 > 20000 && ref.r1 > 20000){      //Kääntyy niin kauan ennenkö keski sensorit ovat mustalla//
+                                    pysahdys();     //Hakee pysähtymis funktion//
+                                    break;
+                                }
+                            }   
+                            break;
+                        }
+                    }
+                }
+            
+                //jos tie päättyy kääntyy vasemmalle//
+                //Samanlaiunen käännös yhdistelmä kuin edellinen "Jos tie päättyy kääntyy oikealle" mutta vain päin vastainen// 
+                if (x > 0){
+                    pysahdys();
+                    vTaskDelay(500);
+                    y++;
+                    motor_start();
+                    motor_turn(0,100,300);
+                    for(;;){
+                        reflectance_read(&ref);
+                        kaannosV();
+                        if (ref.l1 > 20000 && ref.r1 > 20000){
+                            pysahdys();
+                            x--;
+                            vTaskDelay(1000);
+                            print_mqtt("Zumo039/position", "%d %d", x, y);
+                            break;
+                        }
+                    }
+                    //Käännöksen jälkeen kääntyy takaisin kohti maalia seuraavasta risteyksestä// 
+                    for(;;){
+                        reflectance_read(&ref);
+                        suoraa();
+                        if (ref.l3 > 20000 && ref.r3 > 20000){
+                            pysahdys();
+                            vTaskDelay(500);
+                            motor_start();
+                            motor_turn(100,0,200);
+                            for(;;){
+                                reflectance_read(&ref);
+                                kaannosO();
+                                if (ref.l1 > 20000 && ref.r1 > 20000){
+                                    pysahdys();
+                                    vTaskDelay(500);
+                                    break;
+                                }
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            //Jos eteen tulee este niin kierretään se oikealta//
+            if (i < 12){            //I on esteen etäisyys ja kun se on lähempänä kun 12 cm toteutuu//
+                motor_forward(0,0);     //robotti pysähtyy//    
+                vTaskDelay(500);
+                motor_turn(100,0,300);      //Kääntyy vähän jotta keskisensorit eivät ole mustalla//
+                for(;;){
+                    reflectance_read(&ref);
+                    kaannosO();             //Hakee funktion oikealle kääntymiseen//
+                    if (ref.l1 > 20000 && ref.r1 > 20000){      //Kääntyy niin kauan kunnes molemmat keskisensorít ovat mustalla//
+                        pysahdys();         //Hakee pysähtymis funktion//
+                        x++;                //Muuttuja X saa yhden arvon lisää//
+                        vTaskDelay(1000);
+                        print_mqtt("Zumo039/position", "%d %d", x, y);      //Tulostetaan koordinaatit//
+                        break;
+                    }
+                }
+                //Käännöksen jälkeen kääntyy takaisin kohti maalia seuraavasta risteyksestä// 
+                for(;;){
+                    reflectance_read(&ref);
+                    suoraa();           //Hakee suoraan ajon funktion//
+                    if (ref.l3 > 20000 && ref.r3 > 20000){      //Pysähtyy kun tulee seuraava risteys//
+                        pysahdys();         //Hakee pysähdys funktion//
+                        vTaskDelay(1000);
+                        motor_start();
+                        motor_turn(0,100,200);          //Kääntyy vähän jotta keskisensorit ei ole mustalla//
+                        for(;;){
+                            reflectance_read(&ref);
+                            kaannosV();                 //Hakee funktion vasempaan kääntymiseen//
+                            if (ref.l1 > 20000 && ref.r1 > 20000){      //Kääntyy niin kauan kunnes molemmat keskisensorit ovat mustalla//
+                                motor_forward(0,0);     //Robotti pysähtyy//
+                                motor_stop();
+                                vTaskDelay(1000);
+                                break;
+                            }
+                                     
+                        }
+                        break;
+                    }
+                }
+            }
+            //Kun eteen tulee este oikeassa reunassa eikä voi kääntyä oikealle. Robotin toiminta muuttuu päin vastaseksi kun eteen tulee este. Eli eka käännös on aina vasemmalle//
+            if (i < 12 && x == 3){
+                for(;;){
+                    //Lukee sensoreita//
+                    reflectance_read(&ref);
+                    i = Ultra_GetDistance();
+                    suoraa();
+                    //pysähdys//
+                    if ((ref.l3 > 20000 && ref.l2 > 20000 && ref.l1 > 20000) || (ref.r3 > 20000 && ref.r2 > 20000 && ref.r1 > 20000)){
+                        pysahdys();
+                        y++;
+                        vTaskDelay(2000);
+                        print_mqtt("Zumo039/position", "%d %d", x, y);
+                    }
+                    if (y > 12 && x == 0){
+                        suoraa();
+                    }   
+            
+                    //Jos eteen tulee este niin kierretään se vasemmalta//
+                    //Samanlainen käännös yhdistelmä kuin oikealta kiertäminen mutta vain päin vastainen//
+                    if (i < 12){
+                        motor_forward(0,0);
+                        vTaskDelay(500);
+                        motor_turn(0,100,300);
+                        for(;;){
+                            reflectance_read(&ref);
+                            kaannosV();
+                            if (ref.l1 > 20000 && ref.r1 > 20000){
+                                pysahdys();
+                                x--;
+                                vTaskDelay(1000);
+                                print_mqtt("Zumo039/position", "%d %d", x, y);
+                                break;
+                            }
+                        }
+                        //Käännöksen jälkeen kääntyy takaisin kohti maalia seuraavasta risteyksestä// 
+                        for(;;){
+                            reflectance_read(&ref);
+                            suoraa();
+                            if (ref.l3 > 20000 && ref.r3 > 20000){
+                                pysahdys();
+                                vTaskDelay(500);
+                                motor_start();
+                                motor_turn(100,0,200);
+                                for(;;){
+                                    reflectance_read(&ref);
+                                    kaannosO();
+                                    if (ref.l1 > 20000 && ref.r1 > 20000){
+                                        motor_forward(0,0);
+                                        motor_stop();
+                                        vTaskDelay(1000);
+                                        break;
+                                    }
+                                     
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if(y > 11){
+                        break;
+                    }
+                }
+            }
+            //Kun rata päättyy robotti pysähtyy//
+            if (ref.l1 < 20000 && ref.l2 < 20000 && ref.l3 < 20000 && ref.r1 < 20000 && ref.r2 < 20000 && ref.r3 < 20000 && x == 0){
+                motor_forward(0,0);
+                motor_stop();
+                stop = xTaskGetTickCount();     //Ottaa ajan milloin on maalissa//
+                vTaskDelay(1000);
+                time = stop - start;            //Laskee lähtö- ja maalissa olo ajan erotuksen josta saa labyrinttiin kulutettu aika//
+                print_mqtt("Zumo039/stop", "%5d", stop);        //Tulostaa maalissa olo ajan//
+                print_mqtt("Zumo039/time", "%5d", time);        //Tulostaa Labyrinttiin kulutetun ajan//
+                
+                break;   
+            }
+        }
+    }
+}
+#endif
