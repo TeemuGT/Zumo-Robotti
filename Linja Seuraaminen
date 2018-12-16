@@ -1,0 +1,91 @@
+#if 1
+//Linjan seuraaminen//
+//Ryhmä 8//
+//Teemu Tähkä, Johanna Miettinen, Aaro Kärnä//
+void zmain(void){
+    //Muuttujat//
+    TickType_t start;
+    TickType_t end;
+    int x = 0;
+    int time;
+    //Toimintojen käynnistäminen//
+    IR_Start();
+    struct sensors_ ref;
+    motor_start();
+    //Sensorien asetukset//
+    reflectance_start();
+    reflectance_set_threshold(9000, 9000, 11000, 11000, 9000, 9000);
+    for(;;){
+        //Pysähtyminen ensimmäiselle viivalle.//
+        for(;;){
+            IR_wait();
+            motor_start();              
+            for(;;){
+                reflectance_read(&ref);
+                motor_forward(255,1);
+                if (ref.l3 > 20000 && ref.r3 > 20000){
+                    motor_forward(100,50);
+                    motor_stop();
+                    start = xTaskGetTickCount();
+                    break;
+                }
+            }
+            //Tulostaa tiedot että on viivalla ja kauan aikaa meni siirtyä siihen//
+            print_mqtt("Zumo039/Ready", "Line");
+            print_mqtt("Zumo039/Start", "%5d", start);
+            break;
+        }
+        //Käynnistää moottorin ja odottaa lähtöviivalla//
+        for(;;){
+            IR_wait();
+            motor_start();
+            for(;;){
+                //Lukee sensoreita//
+                reflectance_read(&ref);
+                printf("%5d %5d %5d %5d %5d %5d \r\n", ref.l3, ref.l2, ref.l1, ref.r1, ref.r2, ref.r3);
+                //Ajaa suoraan kun keskisensorit on mustalla//
+                if (ref.l1 > 20000 && ref.r1 > 20000){
+                    motor_forward(255,1);
+                }
+                
+                //Käännöksiä eri voimakkuuksilla riippuen sensori lukemista//
+                if (ref.l2 > 20000 && ref.r2 < 20000){
+                    motor_turn(150,255,1);
+                }
+                if (ref.l2 < 20000 && ref.r2 > 20000){
+                    motor_turn(255,150,1);
+                }
+                if (ref.l1 > 20000 && ref.r1 < 20000){
+                    motor_turn(200,255,1);
+                }
+                if (ref.l1 < 20000 && ref.r1 > 20000){
+                    motor_turn(255,200,1);
+                }
+                if (ref.l3 > 20000 && ref.r3 <20000){
+                    motor_turn(0,255,0);
+                }
+                if (ref.l3 < 20000 && ref.r3 > 20000){
+                    motor_turn(255,0,1);
+                }
+            
+                //Muuttuja x saa arvoja kun ylitetään musta viiva//
+                if (ref.l3 > 20000 && ref.r3 > 20000){
+                    ++x;
+                }
+                //Kun muuttuja x on tarpeeksi iso niin pysähdytään//
+                if ( x > 9){
+                    motor_forward(100,50);
+                    motor_stop();
+                    //Lasketaan kulunut aika lähtöviivalta lähdettyä kunnes pysähdytään ja tulostetaan se//
+                    end = xTaskGetTickCount();
+                    time = end - start;
+                    print_mqtt("Zumo039/stop", "%5d", end);
+                    print_mqtt("Zumo039/Time", "%5d", time);
+                    break;
+                }
+            }
+        }
+        break;
+    }
+}
+#endif
